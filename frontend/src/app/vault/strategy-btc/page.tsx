@@ -143,24 +143,30 @@ export default function VaultDetailsPage() {
 
         // Deposit Flow
         const currentAllowance = allowance ? (allowance as bigint) : 0n;
+        const maxUint256 = 115792089237316195423570985008687907853269984665640564039457584007913129639935n;
+
         if (currentAllowance < val) {
             setLastAction('approve');
             writeContract({
                 address: usdyAddress!,
                 abi: MOCK_USDY_ABI,
                 functionName: 'approve',
-                args: [strategyAddress, val],
-                gas: 300000n // Explicit gas limit
+                args: [strategyAddress, maxUint256], // Max Approval
             });
         } else {
             setLastAction('deposit');
-            writeContract({
-                address: strategyAddress,
-                abi: STRATEGY_VAULT_ABI,
-                functionName: 'deposit',
-                args: [val],
-                gas: 5000000n // Very high gas limit to rule it out, though likely a revert logic
-            });
+            try {
+                writeContract({
+                    address: strategyAddress,
+                    abi: STRATEGY_VAULT_ABI,
+                    functionName: 'deposit',
+                    args: [val],
+                    // gas: remove explicit gas limit to let wallet estimate
+                });
+            } catch (err) {
+                console.error("Deposit Error:", err);
+                toast.error("Deposit failed to simulate. Check console.");
+            }
         }
 
     };
