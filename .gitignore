@@ -1,0 +1,25 @@
+# System Files
+.DS_Store
+Thumbs.db
+
+# User Specified Ignores
+doc/
+ref/
+
+# Environment Variables
+.env
+contracts/.env
+
+# Contracts - Foundry/Forge Artifacts
+contracts/broadcast/
+contracts/cache/
+contracts/out/
+contracts/deployment_log.txt
+
+# Python
+__pycache__/
+*.pyc
+
+# Node
+node_modules/
+npm-debug.log
