@@ -134,7 +134,8 @@ export default function VaultDetailsPage() {
                 address: usdyAddress!,
                 abi: MOCK_USDY_ABI,
                 functionName: 'approve',
-                args: [strategyAddress, val]
+                args: [strategyAddress, val],
+                gas: 300000n // Explicit gas limit
             });
         } else {
             setLastAction('deposit');
@@ -142,9 +143,11 @@ export default function VaultDetailsPage() {
                 address: strategyAddress,
                 abi: STRATEGY_VAULT_ABI,
                 functionName: 'deposit',
-                args: [val]
+                args: [val],
+                gas: 500000n // Explicit gas limit
             });
         }
+
     };
 
     React.useEffect(() => {

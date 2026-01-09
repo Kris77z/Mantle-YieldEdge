@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ChevronRight, Clock, TrendingUp, ExternalLink, ShieldCheck, Loader2, CheckCircle, ArrowRight } from 'lucide-react';
+import { ChevronRight, Clock, TrendingUp, ExternalLink, ShieldCheck, Loader2, CheckCircle, ArrowRight, Sparkles } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { CustomConnectButton } from '@/components/CustomConnectButton';
 import { useMarketInfo, useUserPrediction, useAvailableYield, usePredict, usePotentialWinnings } from '@/hooks/useYieldEdge';
@@ -12,6 +12,7 @@ import { useAsset } from '@/context/AssetContext';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
+import { TOKEN_ICONS } from '@/config/contracts';
 
 export default function MarketDetailPage() {
     const params = useParams();
@@ -32,6 +33,17 @@ export default function MarketDetailPage() {
     const [amount, setAmount] = useState('');
     const { predict, isPending, isConfirming, isSuccess, error } = usePredict(address);
     const { data: potentialWinnings } = usePotentialWinnings(address, choice, amount);
+
+    // Helper to determine icon
+    const getMarketIcon = (question: string) => {
+        const q = question.toLowerCase();
+        if (q.includes('btc') || q.includes('bitcoin')) return TOKEN_ICONS.WBTC;
+        if (q.includes('eth') || q.includes('ethereum')) return TOKEN_ICONS.WETH;
+        if (q.includes('sol') || q.includes('solana')) return 'https://cryptologos.cc/logos/solana-sol-logo.png';
+        return null; // Default to '?'
+    };
+
+    const marketIcon = marketInfo ? getMarketIcon(marketInfo.question) : null;
 
     // Handle success
     useEffect(() => {
@@ -99,7 +111,6 @@ export default function MarketDetailPage() {
 
             <div className="container mx-auto px-4 md:px-6 lg:px-8 py-10 max-w-[1440px]">
                 {/* Breadcrumbs */}
-                {/* Breadcrumbs */}
                 <div className="flex items-center gap-2 text-[10px] text-[var(--muted)] mb-8 font-bold uppercase tracking-widest">
                     <Link href="/" className="hover:text-[var(--foreground)] transition-colors">Markets</Link>
                     <ChevronRight className="w-3 h-3" />
@@ -112,8 +123,14 @@ export default function MarketDetailPage() {
                         {/* Market Title Header */}
                         <div className="space-y-8">
                             <div className="flex items-start gap-6">
-                                <div className="w-20 h-20 rounded-full bg-[var(--primary)]/10 text-[var(--primary)] border border-[var(--primary)]/20 flex items-center justify-center text-4xl font-serif font-bold italic shadow-lg shrink-0">
-                                    ?
+                                <div className="w-20 h-20 rounded-full bg-[var(--primary)]/10 text-[var(--primary)] border border-[var(--primary)]/20 flex items-center justify-center text-4xl font-serif font-bold italic shadow-lg shrink-0 overflow-hidden relative">
+                                    {marketIcon ? (
+                                        <div className="w-full h-full p-2 bg-white/50">
+                                            <img src={marketIcon} alt="Icon" className="w-full h-full object-contain" />
+                                        </div>
+                                    ) : (
+                                        '?'
+                                    )}
                                 </div>
                                 <div className="flex-1">
                                     <div className="flex items-center gap-3 mb-4">
