@@ -533,7 +533,7 @@ export default function VaultDetailsPage() {
                                                                 <span className="font-medium text-slate-900">{asset.symbol}</span>
                                                                 {asset.isIdle ? <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-medium">Idle</span> : null}
                                                             </td>
-                                                            <td className="px-6 py-4 text-slate-600">Morpho {currentAsset === 'meth' ? 'Blue' : 'Rewards'}</td>
+                                                            <td className="px-6 py-4 text-slate-600">Morpho {currentAsset as string === 'meth' ? 'Blue' : 'Rewards'}</td>
                                                             <td className="px-6 py-4 text-right font-medium text-slate-900">{asset.percentage}%</td>
                                                         </tr>
                                                     ))}
