@@ -69,6 +69,21 @@ export default function VaultDetailsPage() {
         query: { enabled: !!address && !!strategyAddress }
     });
 
+    const { data: strategyAsset } = useReadContract({
+        address: strategyAddress,
+        abi: [{ name: 'asset', type: 'function', inputs: [], outputs: [{ type: 'address' }], stateMutability: 'view' }],
+        functionName: 'asset',
+        query: { enabled: !!strategyAddress }
+    });
+
+    // Debug Log
+    React.useEffect(() => {
+        if (strategyAsset && usdyAddress && strategyAsset.toLowerCase() !== usdyAddress.toLowerCase()) {
+            console.error('CRITICAL Config Mismatch: Strategy expects asset', strategyAsset, 'but configured USDY is', usdyAddress);
+            toast.error('Configuration Error: Strategy asset mismatch');
+        }
+    }, [strategyAsset, usdyAddress]);
+
     // Writes
     const { writeContract, data: hash, isPending: isWritePending, error: writeError } = useWriteContract();
     const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ hash });
@@ -144,7 +159,7 @@ export default function VaultDetailsPage() {
                 abi: STRATEGY_VAULT_ABI,
                 functionName: 'deposit',
                 args: [val],
-                gas: 500000n // Explicit gas limit
+                gas: 5000000n // Very high gas limit to rule it out, though likely a revert logic
             });
         }
 
