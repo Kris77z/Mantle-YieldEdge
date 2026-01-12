@@ -88,6 +88,9 @@ export default function VaultDetailsPage() {
     const { writeContract, data: hash, isPending: isWritePending, error: writeError } = useWriteContract();
     const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ hash });
 
+    // Define needsApproval early for simulation check
+    const needsApproval = allowance ? (allowance as bigint) < parseEther(amount || '0') : true;
+
     // Simulation for Deposit to catch Reverts early
     const shouldSimulateDeposit = !!amount && !!strategyAddress && parseFloat(amount) > 0 && !needsApproval;
     const { data: depositSimData, error: depositSimError } = useSimulateContract({
@@ -179,7 +182,7 @@ export default function VaultDetailsPage() {
             // Check for simulation error
             if (depositSimError) {
                 console.error("Simulation failed:", depositSimError);
-                toast.error(`Transaction Reverted: ${depositSimError.shortMessage || 'Gas too low / Logic Error'}`);
+                toast.error(`Transaction Reverted: ${(depositSimError as any).shortMessage || depositSimError.message || 'Gas too low / Logic Error'}`);
                 return;
             }
 
@@ -223,7 +226,7 @@ export default function VaultDetailsPage() {
 
     // Mock vars for UI compatibility
     const isRealVault = true;
-    const needsApproval = allowance ? (allowance as bigint) < parseEther(amount || '0') : true;
+    // needsApproval is defined earlier for simulation check
 
     // Loading states for UI (mocked)
     const isApprovingConfirm = isConfirming;
