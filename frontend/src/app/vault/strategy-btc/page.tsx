@@ -11,7 +11,7 @@ import { TOKEN_ICONS, getContracts, MOCK_USDY_ABI, STRATEGY_VAULT_ABI } from '@/
 import { ExposureDisplay, ExposureAsset } from '@/components/vault/ExposureDisplay';
 import { useAsset } from '@/context/AssetContext';
 import { useTokenBalance } from '@/hooks/useYieldEdge';
-import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
+import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt, useSimulateContract } from 'wagmi';
 import { formatEther, parseEther } from 'viem';
 import { toast } from 'sonner';
 
@@ -88,6 +88,26 @@ export default function VaultDetailsPage() {
     const { writeContract, data: hash, isPending: isWritePending, error: writeError } = useWriteContract();
     const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ hash });
 
+    // Simulation for Deposit to catch Reverts early
+    const shouldSimulateDeposit = !!amount && !!strategyAddress && parseFloat(amount) > 0 && !needsApproval;
+    const { data: depositSimData, error: depositSimError } = useSimulateContract({
+        address: strategyAddress,
+        abi: STRATEGY_VAULT_ABI,
+        functionName: 'deposit',
+        args: [amount ? parseEther(amount) : 0n],
+        query: {
+            enabled: shouldSimulateDeposit,
+            retry: false
+        }
+    });
+
+    // Log simulation error if present
+    React.useEffect(() => {
+        if (depositSimError) {
+            console.error("Deposit Simulation Error:", depositSimError);
+        }
+    }, [depositSimError]);
+
     // Derived State
     const isPending = isWritePending || isConfirming;
     const isApproving = isPending; // Simplified for UI
@@ -155,17 +175,30 @@ export default function VaultDetailsPage() {
             });
         } else {
             setLastAction('deposit');
+
+            // Check for simulation error
+            if (depositSimError) {
+                console.error("Simulation failed:", depositSimError);
+                toast.error(`Transaction Reverted: ${depositSimError.shortMessage || 'Gas too low / Logic Error'}`);
+                return;
+            }
+
             try {
-                writeContract({
-                    address: strategyAddress,
-                    abi: STRATEGY_VAULT_ABI,
-                    functionName: 'deposit',
-                    args: [val],
-                    // gas: remove explicit gas limit to let wallet estimate
-                });
+                if (depositSimData?.request) {
+                    writeContract(depositSimData.request);
+                } else {
+                    // Fallback if simulation didn't run yet but checks pass (shouldn't happen often)
+                    writeContract({
+                        address: strategyAddress,
+                        abi: STRATEGY_VAULT_ABI,
+                        functionName: 'deposit',
+                        args: [val],
+                        gas: 10000000n // Huge gas limit fallback
+                    });
+                }
             } catch (err) {
                 console.error("Deposit Error:", err);
-                toast.error("Deposit failed to simulate. Check console.");
+                toast.error("Deposit failed to simulate. " + (err as any)?.shortMessage);
             }
         }
 
@@ -314,7 +347,7 @@ export default function VaultDetailsPage() {
                         </div>
 
                         {/* Navigation Tabs */}
-                        <div className="border-b border-slate-200">
+                        <div className="border-b border-[var(--borderSoft)]">
                             <nav className="flex items-center gap-8" aria-label="Tabs">
                                 {[
                                     { id: 'your-position', label: 'Your Position' },
@@ -329,8 +362,8 @@ export default function VaultDetailsPage() {
                                         className={cn(
                                             "py-4 text-sm font-medium border-b-2 transition-all",
                                             activeSection === tab.id
-                                                ? "border-slate-900 text-slate-900"
-                                                : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300"
+                                                ? "border-[var(--foreground)] text-[var(--foreground)]"
+                                                : "border-transparent text-[var(--muted)] hover:text-[var(--foreground)] hover:border-[var(--borderSoft)]"
                                         )}
                                     >
                                         {tab.label}
@@ -345,43 +378,43 @@ export default function VaultDetailsPage() {
                             {/* Your Position Tab */}
                             {activeSection === 'your-position' && (
                                 <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                                    <div className="bg-white rounded-2xl border border-slate-200 p-8 shadow-sm">
+                                    <div className="bg-[var(--card)] backdrop-blur-md rounded-[32px] border border-[var(--border)] p-8 shadow-sm">
                                         <div className="flex items-start justify-between">
                                             <div>
-                                                <div className="text-sm text-slate-500 font-medium mb-1">My Deposit</div>
-                                                <div className="text-5xl font-medium text-slate-900 tracking-tight">
+                                                <div className="text-sm text-[var(--muted)] font-medium mb-1">My Deposit</div>
+                                                <div className="text-5xl font-medium text-[var(--foreground)] tracking-tight">
                                                     {depositInfo?.currentValue ? parseFloat(depositInfo.currentValue).toFixed(2) : '0.00'}
                                                 </div>
                                             </div>
                                             <div className="flex gap-2">
-                                                <Badge variant="outline" className="text-slate-600 bg-slate-50">{symbol}</Badge>
+                                                <Badge variant="outline" className="text-[var(--secondary)] bg-[var(--surface-1)]">{symbol}</Badge>
                                             </div>
                                         </div>
 
                                         {/* Position Details */}
                                         {depositInfo && parseFloat(depositInfo.principal) > 0 && (
                                             <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4">
-                                                <div className="bg-slate-50 rounded-xl p-4">
-                                                    <div className="text-xs text-slate-500 mb-1">Principal</div>
-                                                    <div className="text-lg font-semibold text-slate-900">
+                                                <div className="bg-[var(--surface-1)] rounded-xl p-4">
+                                                    <div className="text-xs text-[var(--muted)] mb-1">Principal</div>
+                                                    <div className="text-lg font-semibold text-[var(--foreground)]">
                                                         {parseFloat(depositInfo.principal).toFixed(2)} {symbol}
                                                     </div>
                                                 </div>
-                                                <div className="bg-green-50 rounded-xl p-4">
-                                                    <div className="text-xs text-green-600 mb-1">Unlocked Yield</div>
-                                                    <div className="text-lg font-semibold text-green-700">
+                                                <div className="bg-[#4A6D4D]/10 rounded-xl p-4">
+                                                    <div className="text-xs text-[#4A6D4D] mb-1">Unlocked Yield</div>
+                                                    <div className="text-lg font-semibold text-[#4A6D4D]">
                                                         {parseFloat(depositInfo.unlockedYield) >= 0 ? '+' : ''}{parseFloat(depositInfo.unlockedYield).toFixed(2)} {symbol}
                                                     </div>
                                                 </div>
-                                                <div className="bg-amber-50 rounded-xl p-4">
-                                                    <div className="text-xs text-amber-600 mb-1">Locked Yield</div>
-                                                    <div className="text-lg font-semibold text-amber-700">
+                                                <div className="bg-[var(--gold)]/10 rounded-xl p-4">
+                                                    <div className="text-xs text-[var(--gold)] mb-1">Locked Yield</div>
+                                                    <div className="text-lg font-semibold text-[var(--gold)]">
                                                         {parseFloat(depositInfo.lockedYield).toFixed(2)} {symbol}
                                                     </div>
                                                 </div>
-                                                <div className="bg-blue-50 rounded-xl p-4">
-                                                    <div className="text-xs text-blue-600 mb-1">Total Yield</div>
-                                                    <div className="text-lg font-semibold text-blue-700">
+                                                <div className="bg-[var(--primary)]/10 rounded-xl p-4">
+                                                    <div className="text-xs text-[var(--primary)] mb-1">Total Yield</div>
+                                                    <div className="text-lg font-semibold text-[var(--primary)]">
                                                         {parseFloat(depositInfo.totalYield) >= 0 ? '+' : ''}{parseFloat(depositInfo.totalYield).toFixed(2)} {symbol}
                                                     </div>
                                                 </div>
@@ -390,24 +423,24 @@ export default function VaultDetailsPage() {
 
                                         {/* Strategy Auto-Bet Info */}
                                         {depositInfo && parseFloat(depositInfo.principal) > 0 && (
-                                            <div className="mt-6 bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 rounded-xl p-4">
+                                            <div className="mt-6 bg-gradient-to-r from-[var(--gold)]/10 to-[var(--surface-2)] border border-[var(--gold)]/20 rounded-xl p-4">
                                                 <div className="flex items-start gap-3">
-                                                    <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center flex-shrink-0">
-                                                        <TrendingUp className="w-5 h-5 text-orange-600" />
+                                                    <div className="w-10 h-10 rounded-full bg-[var(--gold)]/20 flex items-center justify-center flex-shrink-0">
+                                                        <TrendingUp className="w-5 h-5 text-[var(--gold)]" />
                                                     </div>
                                                     <div className="flex-1">
-                                                        <h4 className="font-bold text-orange-900 mb-1">🎯 Strategy Auto-Executed</h4>
-                                                        <p className="text-sm text-orange-700 leading-relaxed">
-                                                            Your flash yield has been automatically bet on <span className="font-semibold">"BTC &gt; $100k by Jan 2026"</span> market, outcome: <span className="inline-flex items-center gap-1 bg-green-100 text-green-700 px-2 py-0.5 rounded font-semibold text-xs">YES</span>.
+                                                        <h4 className="font-bold text-[var(--foreground)] mb-1">🎯 Strategy Auto-Executed</h4>
+                                                        <p className="text-sm text-[var(--muted)] leading-relaxed">
+                                                            Your flash yield has been automatically bet on <span className="font-semibold text-[var(--foreground)]">"BTC &gt; $100k by Jan 2026"</span> market, outcome: <span className="inline-flex items-center gap-1 bg-[#4A6D4D]/20 text-[#4A6D4D] px-2 py-0.5 rounded font-semibold text-xs">YES</span>.
                                                         </p>
                                                         <div className="mt-3 flex items-center gap-4 text-xs">
                                                             <div className="flex items-center gap-1.5">
-                                                                <span className="text-orange-600">Bet Amount:</span>
-                                                                <span className="font-semibold text-orange-900">~{(parseFloat(depositInfo.principal) * 0.5 * 30 / 365).toFixed(2)} yUSDY</span>
+                                                                <span className="text-[var(--gold)]">Bet Amount:</span>
+                                                                <span className="font-semibold text-[var(--foreground)]">~{(parseFloat(depositInfo.principal) * 0.5 * 30 / 365).toFixed(2)} yUSDY</span>
                                                             </div>
                                                             <Link
                                                                 href="/markets/0xa188527c4a95f0a413d3cb91c48c3d7be8745aaa"
-                                                                className="text-blue-600 hover:underline font-medium flex items-center gap-1"
+                                                                className="text-[var(--primary)] hover:underline font-medium flex items-center gap-1"
                                                             >
                                                                 View Market <ChevronRight className="w-3 h-3" />
                                                             </Link>
@@ -427,12 +460,12 @@ export default function VaultDetailsPage() {
 
                                     <div>
                                         <div className="flex items-center justify-between mb-4">
-                                            <h3 className="text-lg font-medium text-slate-900">Your transactions</h3>
+                                            <h3 className="text-lg font-medium text-[var(--foreground)]">Your transactions</h3>
                                         </div>
-                                        <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-slate-400 min-h-[200px] flex items-center justify-center">
+                                        <div className="bg-[var(--card)] backdrop-blur-md rounded-[32px] border border-[var(--border)] p-8 text-center text-[var(--muted)] min-h-[200px] flex items-center justify-center">
                                             <div>
                                                 <p>Transaction history coming soon.</p>
-                                                <p className="text-sm mt-2">View on <a href={`https://sepolia.mantlescan.xyz/address/${assetConfig.vault}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">Mantle Explorer</a></p>
+                                                <p className="text-sm mt-2">View on <a href={`https://sepolia.mantlescan.xyz/address/${assetConfig.vault}`} target="_blank" rel="noopener noreferrer" className="text-[var(--primary)] underline">Mantle Explorer</a></p>
                                             </div>
                                         </div>
                                     </div>
@@ -443,16 +476,16 @@ export default function VaultDetailsPage() {
                             {activeSection === 'overview' && (
                                 <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
                                     {/* Total Deposits Chart Card */}
-                                    <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+                                    <div className="bg-[var(--card)] backdrop-blur-md rounded-[32px] border border-[var(--border)] p-8 shadow-sm">
                                         <div className="flex items-center justify-between mb-6">
                                             <div>
-                                                <div className="text-sm text-slate-500 font-medium mb-1">Total Deposits (USD)</div>
-                                                <div className="text-4xl font-medium text-slate-900 tracking-tight">$381.75<span className="text-slate-400">M</span></div>
+                                                <div className="text-xs text-[var(--muted)] font-bold uppercase tracking-widest mb-1">Total Deposits (USD)</div>
+                                                <div className="text-4xl font-serif font-medium text-[var(--foreground)] tracking-tight">$381.75<span className="text-xl text-[var(--muted)]">M</span></div>
                                             </div>
-                                            <div className="flex bg-slate-100 rounded-lg p-1">
-                                                {['USDC', 'USD'].map(t => <button key={t} className={`text-xs font-semibold px-3 py-1 rounded-md ${t === 'USD' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500'}`}>{t}</button>)}
-                                                <div className="w-px bg-slate-300 mx-1 h-4 self-center"></div>
-                                                <button className="text-xs font-semibold px-3 py-1 rounded-md text-slate-900 bg-white shadow-sm">3 months</button>
+                                            <div className="flex bg-[var(--surface-1)] rounded-full p-1 border border-[var(--borderSoft)]">
+                                                {['USDC', 'USD'].map(t => <button key={t} className={`text-[10px] font-bold uppercase tracking-wider px-4 py-1.5 rounded-full transition-all ${t === 'USD' ? 'bg-white shadow-sm text-[var(--foreground)]' : 'text-[var(--muted)] hover:text-[var(--foreground)]'}`}>{t}</button>)}
+                                                <div className="w-px bg-[var(--border)] mx-1 h-3 self-center"></div>
+                                                <button className="text-[10px] font-bold uppercase tracking-wider px-4 py-1.5 rounded-full text-[var(--foreground)] bg-white shadow-sm">3 months</button>
                                             </div>
                                         </div>
                                         <div className="h-[250px] w-full">
@@ -460,13 +493,13 @@ export default function VaultDetailsPage() {
                                                 <AreaChart data={DATA}>
                                                     <defs>
                                                         <linearGradient id="colorTvl" x1="0" y1="0" x2="0" y2="1">
-                                                            <stop offset="5%" stopColor="#2563EB" stopOpacity={0.1} />
-                                                            <stop offset="95%" stopColor="#2563EB" stopOpacity={0} />
+                                                            <stop offset="5%" stopColor="#947493" stopOpacity={0.2} />
+                                                            <stop offset="95%" stopColor="#947493" stopOpacity={0} />
                                                         </linearGradient>
                                                     </defs>
                                                     <XAxis dataKey="day" hide />
                                                     <YAxis hide domain={['dataMin', 'dataMax']} />
-                                                    <Area type="monotone" dataKey="tvl" stroke="#2563EB" strokeWidth={2} fill="url(#colorTvl)" />
+                                                    <Area type="monotone" dataKey="tvl" stroke="#947493" strokeWidth={2} fill="url(#colorTvl)" />
                                                 </AreaChart>
                                             </ResponsiveContainer>
                                         </div>
@@ -474,91 +507,92 @@ export default function VaultDetailsPage() {
 
                                     {/* APY & Breakdown Split */}
                                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                                        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+                                        <div className="bg-[var(--card)] backdrop-blur-md rounded-[32px] border border-[var(--border)] p-8 shadow-sm">
                                             <div className="mb-6">
-                                                <div className="flex items-center gap-1 text-sm text-slate-500 font-medium mb-1">APY <span className="text-blue-500">✨</span></div>
-                                                <div className="text-4xl font-medium text-slate-900 tracking-tight">4.82%</div>
+                                                <div className="flex items-center gap-1 text-xs text-[var(--muted)] font-bold uppercase tracking-widest mb-1">APY <span className="text-[var(--primary)]">✨</span></div>
+                                                <div className="text-4xl font-serif font-medium text-[var(--foreground)] tracking-tight">18.82%</div>
                                             </div>
                                             <div className="h-[200px] w-full">
                                                 <ResponsiveContainer width="100%" height="100%">
                                                     <AreaChart data={DATA}>
                                                         <defs>
                                                             <linearGradient id="colorApy2" x1="0" y1="0" x2="0" y2="1">
-                                                                <stop offset="5%" stopColor="#2563EB" stopOpacity={0.1} />
-                                                                <stop offset="95%" stopColor="#2563EB" stopOpacity={0} />
+                                                                <stop offset="5%" stopColor="#947493" stopOpacity={0.2} />
+                                                                <stop offset="95%" stopColor="#947493" stopOpacity={0} />
                                                             </linearGradient>
                                                         </defs>
-                                                        <Area type="monotone" dataKey="apy" stroke="#2563EB" strokeWidth={2} fill="url(#colorApy2)" />
+                                                        <Area type="monotone" dataKey="apy" stroke="#947493" strokeWidth={2} fill="url(#colorApy2)" />
                                                     </AreaChart>
                                                 </ResponsiveContainer>
                                             </div>
                                         </div>
 
-                                        <div className="bg-slate-50/50 rounded-2xl border border-slate-200 p-8 space-y-6">
+                                        <div className="bg-white/40 rounded-[32px] border border-[var(--borderSoft)] p-8 space-y-6 backdrop-blur-sm">
                                             <div className="flex justify-between items-center">
                                                 <div className="flex items-center gap-3">
-                                                    <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-600">
+                                                    <div className="w-8 h-8 rounded-full bg-[var(--surface-2)] flex items-center justify-center text-[var(--secondary)]">
                                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M2 12h20" /></svg>
                                                     </div>
-                                                    <span className="font-medium text-slate-700">Native APY</span>
+                                                    <span className="font-medium text-[var(--foreground)]">Base APY</span>
                                                 </div>
-                                                <span className="font-bold text-slate-900">4.54%</span>
+                                                <span className="font-serif font-bold text-[var(--foreground)]">4.54%</span>
                                             </div>
                                             <div className="flex justify-between items-center">
                                                 <div className="flex items-center gap-3">
-                                                    <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600">
-                                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></svg>
+                                                    <div className="w-8 h-8 rounded-full bg-[rgba(148,116,147,0.1)] flex items-center justify-center text-[var(--primary)]">
+                                                        <TrendingUp className="w-4 h-4" />
                                                     </div>
-                                                    <span className="font-medium text-slate-700">MORPHO <ExternalLink className="inline w-3 h-3 ml-1" /></span>
+                                                    <span className="font-medium text-[var(--foreground)]">Strategy Alpha</span>
                                                 </div>
-                                                <span className="font-bold text-slate-900">+0.27%</span>
+                                                <span className="font-serif font-bold text-[var(--foreground)]">+14.28%</span>
                                             </div>
                                             <div className="flex justify-between items-center opacity-50">
                                                 <div className="flex items-center gap-3">
-                                                    <div className="w-8 h-8 rounded-full bg-transparent flex items-center justify-center text-slate-400">
+                                                    <div className="w-8 h-8 rounded-full bg-transparent flex items-center justify-center text-[var(--muted)]">
                                                         $
                                                     </div>
-                                                    <span className="font-medium text-slate-700">Performance Fee <span className="bg-slate-200 text-xs px-1.5 py-0.5 rounded ml-1">0%</span></span>
+                                                    <span className="font-medium text-[var(--foreground)]">Performance Fee <span className="bg-[var(--surface-1)] text-[10px] px-1.5 py-0.5 rounded ml-1">10%</span></span>
                                                 </div>
-                                                <span className="font-bold text-slate-900">0.00%</span>
+                                                <span className="font-serif font-bold text-[var(--foreground)]">-1.42%</span>
                                             </div>
-                                            <div className="pt-6 border-t border-slate-200 flex justify-between items-center">
-                                                <div className="flex items-center gap-2 text-blue-600 font-medium">
-                                                    <span className="text-blue-500">✨</span> Net APY
+                                            <div className="pt-6 border-t border-[var(--borderSoft)] flex justify-between items-center">
+                                                <div className="flex items-center gap-2 text-[var(--primary)] font-medium">
+                                                    <span className="text-[var(--primary)]">✨</span> Net APY
                                                 </div>
-                                                <span className="font-bold text-blue-600">= 4.82%</span>
+                                                <span className="font-serif font-bold text-[var(--primary)] text-xl">= 18.82%</span>
                                             </div>
                                         </div>
                                     </div>
 
+
                                     {/* Market Exposure Table */}
                                     <div>
                                         <div className="flex items-center justify-between mb-6">
-                                            <h3 className="text-lg font-medium text-slate-900">Market Exposure</h3>
+                                            <h3 className="text-lg font-medium text-[var(--foreground)]">Market Exposure</h3>
                                             <div className="flex items-center gap-2">
-                                                <span className="text-sm font-medium text-slate-500">Breakdown</span>
+                                                <span className="text-sm font-medium text-[var(--muted)]">Breakdown</span>
                                                 <ExposureDisplay assets={exposureAssets} />
                                             </div>
                                         </div>
-                                        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+                                        <div className="bg-[var(--card)] backdrop-blur-md rounded-[32px] border border-[var(--border)] overflow-hidden shadow-sm">
                                             <table className="w-full text-sm">
-                                                <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-medium">
+                                                <thead className="bg-[var(--surface-1)] border-b border-[var(--borderSoft)] text-[var(--muted)] font-medium">
                                                     <tr>
                                                         <th className="px-6 py-4 text-left">Asset</th>
                                                         <th className="px-6 py-4 text-left">Protocol</th>
                                                         <th className="px-6 py-4 text-right">Allocation</th>
                                                     </tr>
                                                 </thead>
-                                                <tbody className="divide-y divide-slate-100">
+                                                <tbody className="divide-y divide-[var(--borderSoft)]">
                                                     {exposureAssets.map((asset, i) => (
-                                                        <tr key={i} className="hover:bg-slate-50 transition-colors">
+                                                        <tr key={i} className="hover:bg-[var(--surface-1)] transition-colors">
                                                             <td className="px-6 py-4 flex items-center gap-3">
                                                                 <img src={asset.icon} alt={asset.symbol} className="w-6 h-6 rounded-full" />
-                                                                <span className="font-medium text-slate-900">{asset.symbol}</span>
-                                                                {asset.isIdle ? <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-medium">Idle</span> : null}
+                                                                <span className="font-medium text-[var(--foreground)]">{asset.symbol}</span>
+                                                                {asset.isIdle ? <span className="text-[10px] bg-[var(--surface-2)] text-[var(--muted)] px-1.5 py-0.5 rounded font-medium">Idle</span> : null}
                                                             </td>
-                                                            <td className="px-6 py-4 text-slate-600">Morpho {currentAsset as string === 'meth' ? 'Blue' : 'Rewards'}</td>
-                                                            <td className="px-6 py-4 text-right font-medium text-slate-900">{asset.percentage}%</td>
+                                                            <td className="px-6 py-4 text-[var(--secondary)]">Morpho {currentAsset as string === 'meth' ? 'Blue' : 'Rewards'}</td>
+                                                            <td className="px-6 py-4 text-right font-medium text-[var(--foreground)]">{asset.percentage}%</td>
                                                         </tr>
                                                     ))}
                                                 </tbody>
@@ -572,23 +606,23 @@ export default function VaultDetailsPage() {
                             {activeSection === 'performance' && (
                                 <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
                                     {/* Chart Section */}
-                                    <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+                                    <div className="bg-[var(--card)] backdrop-blur-md rounded-[32px] border border-[var(--border)] p-8 shadow-sm">
                                         <div className="h-[300px] w-full">
                                             <ResponsiveContainer width="100%" height="100%">
                                                 <AreaChart data={DATA}>
                                                     <defs>
                                                         <linearGradient id="colorApy" x1="0" y1="0" x2="0" y2="1">
-                                                            <stop offset="5%" stopColor="#2563EB" stopOpacity={0.1} />
-                                                            <stop offset="95%" stopColor="#2563EB" stopOpacity={0} />
+                                                            <stop offset="5%" stopColor="#947493" stopOpacity={0.2} />
+                                                            <stop offset="95%" stopColor="#947493" stopOpacity={0} />
                                                         </linearGradient>
                                                     </defs>
                                                     <XAxis dataKey="day" hide />
                                                     <YAxis hide domain={['dataMin', 'dataMax']} />
                                                     <Tooltip
-                                                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                                                        cursor={{ stroke: '#CBD5E1' }}
+                                                        contentStyle={{ borderRadius: '12px', background: 'var(--surface-1)', border: '1px solid var(--border)', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                                                        cursor={{ stroke: 'var(--muted)' }}
                                                     />
-                                                    <Area type="monotone" dataKey="apy" stroke="#2563EB" strokeWidth={3} fillOpacity={1} fill="url(#colorApy)" />
+                                                    <Area type="monotone" dataKey="apy" stroke="#947493" strokeWidth={3} fillOpacity={1} fill="url(#colorApy)" />
                                                 </AreaChart>
                                             </ResponsiveContainer>
                                         </div>
@@ -596,38 +630,38 @@ export default function VaultDetailsPage() {
 
                                     {/* Returns Grid */}
                                     <div>
-                                        <h3 className="text-lg font-medium text-slate-900 mb-4">Returns</h3>
+                                        <h3 className="text-lg font-medium text-[var(--foreground)] mb-4">Returns</h3>
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6">
-                                            <div className="flex justify-between items-center py-3 border-b border-slate-100">
-                                                <div className="flex items-center gap-1.5 text-slate-500">
+                                            <div className="flex justify-between items-center py-3 border-b border-[var(--borderSoft)]">
+                                                <div className="flex items-center gap-1.5 text-[var(--muted)]">
                                                     Instant APY <Info className="w-3.5 h-3.5" />
                                                 </div>
-                                                <div className="flex items-center gap-2 font-medium text-slate-900">
-                                                    4.84% <span className="text-blue-500">✨</span>
+                                                <div className="flex items-center gap-2 font-medium text-[var(--foreground)]">
+                                                    4.84% <span className="text-[var(--primary)]">✨</span>
                                                 </div>
                                             </div>
-                                            <div className="flex justify-between items-center py-3 border-b border-slate-100">
-                                                <span className="text-slate-500">7D APY</span>
-                                                <span className="font-medium text-slate-900">4.16%</span>
+                                            <div className="flex justify-between items-center py-3 border-b border-[var(--borderSoft)]">
+                                                <span className="text-[var(--muted)]">7D APY</span>
+                                                <span className="font-medium text-[var(--foreground)]">4.16%</span>
                                             </div>
-                                            <div className="flex justify-between items-center py-3 border-b border-slate-100">
-                                                <span className="text-slate-500">30D APY</span>
-                                                <span className="font-medium text-slate-900">3.89%</span>
+                                            <div className="flex justify-between items-center py-3 border-b border-[var(--borderSoft)]">
+                                                <span className="text-[var(--muted)]">30D APY</span>
+                                                <span className="font-medium text-[var(--foreground)]">3.89%</span>
                                             </div>
-                                            <div className="flex justify-between items-center py-3 border-b border-slate-100">
-                                                <span className="text-slate-500">90D APY</span>
-                                                <span className="font-medium text-slate-900">4.23%</span>
+                                            <div className="flex justify-between items-center py-3 border-b border-[var(--borderSoft)]">
+                                                <span className="text-[var(--muted)]">90D APY</span>
+                                                <span className="font-medium text-[var(--foreground)]">4.23%</span>
                                             </div>
-                                            <div className="flex justify-between items-center py-3 border-b border-slate-100">
-                                                <span className="text-slate-500">Performance Fee</span>
-                                                <span className="font-medium text-slate-900">0.00%</span>
+                                            <div className="flex justify-between items-center py-3 border-b border-[var(--borderSoft)]">
+                                                <span className="text-[var(--muted)]">Performance Fee</span>
+                                                <span className="font-medium text-[var(--foreground)]">0.00%</span>
                                             </div>
-                                            <div className="flex justify-between items-center py-3 border-b border-slate-100">
-                                                <span className="text-slate-500">Fee Recipient</span>
-                                                <div className="flex items-center gap-2 text-slate-900">
+                                            <div className="flex justify-between items-center py-3 border-b border-[var(--borderSoft)]">
+                                                <span className="text-[var(--muted)]">Fee Recipient</span>
+                                                <div className="flex items-center gap-2 text-[var(--foreground)]">
                                                     <span className="font-mono text-sm">0x255c...085a</span>
-                                                    <Copy className="w-3.5 h-3.5 text-slate-400 cursor-pointer hover:text-slate-600" />
-                                                    <ExternalLink className="w-3.5 h-3.5 text-slate-400 cursor-pointer hover:text-slate-600" />
+                                                    <Copy className="w-3.5 h-3.5 text-[var(--muted)] cursor-pointer hover:text-[var(--foreground)]" />
+                                                    <ExternalLink className="w-3.5 h-3.5 text-[var(--muted)] cursor-pointer hover:text-[var(--foreground)]" />
                                                 </div>
                                             </div>
                                         </div>
@@ -640,7 +674,7 @@ export default function VaultDetailsPage() {
                                 <div className="space-y-12 animate-in fade-in slide-in-from-bottom-2 duration-300">
 
                                     <div>
-                                        <h3 className="text-lg font-medium text-slate-900 mb-6">Risk Disclosures</h3>
+                                        <h3 className="text-lg font-medium text-[var(--foreground)] mb-6">Risk Disclosures</h3>
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-16 gap-y-4">
                                             {[
                                                 { label: 'Curator TVL', value: '$1.55B' },
@@ -651,12 +685,12 @@ export default function VaultDetailsPage() {
                                                 { label: 'Morpho Vault Version', value: 'v1.0' },
                                                 { label: 'Timelock Duration', value: '7 days' },
                                             ].map((item, i) => (
-                                                <div key={i} className="flex justify-between items-center py-3 border-b border-slate-100">
-                                                    <span className="text-slate-500">{item.label}</span>
-                                                    <div className="flex items-center gap-2 font-medium text-slate-900">
-                                                        {item.icon && <div className="w-4 h-4 rounded-full bg-green-500"></div>}
+                                                <div key={i} className="flex justify-between items-center py-3 border-b border-[var(--borderSoft)]">
+                                                    <span className="text-[var(--muted)]">{item.label}</span>
+                                                    <div className="flex items-center gap-2 font-medium text-[var(--foreground)]">
+                                                        {item.icon && <div className="w-4 h-4 rounded-full bg-[#4A6D4D]"></div>}
                                                         {item.value}
-                                                        {item.icon && <ExternalLink className="w-3 h-3 text-slate-400" />}
+                                                        {item.icon && <ExternalLink className="w-3 h-3 text-[var(--muted)]" />}
                                                     </div>
                                                 </div>
                                             ))}
@@ -665,10 +699,10 @@ export default function VaultDetailsPage() {
 
                                     {/* Market Risk Disclosures */}
                                     <div>
-                                        <h4 className="text-sm font-medium text-slate-900 mb-2 flex items-center gap-2">
-                                            Market Risk Disclosures <Info className="w-3.5 h-3.5 text-slate-400" />
+                                        <h4 className="text-sm font-medium text-[var(--foreground)] mb-2 flex items-center gap-2">
+                                            Market Risk Disclosures <Info className="w-3.5 h-3.5 text-[var(--muted)]" />
                                         </h4>
-                                        <div className="bg-slate-50 rounded-xl p-4 text-xs text-slate-500 leading-relaxed border border-slate-100">
+                                        <div className="bg-[var(--surface-1)] rounded-xl p-4 text-xs text-[var(--muted)] leading-relaxed border border-[var(--borderSoft)]">
                                             Steakhouse (incl. Prime) Vaults are designed to minimize volatility by programmatically allocating against highly-liquid assets. While Steakhouse Vaults are focused on established markets, no strategy eliminates risk entirely.
                                         </div>
                                     </div>
@@ -676,33 +710,33 @@ export default function VaultDetailsPage() {
                                     {/* Ratings & Risk Curation */}
                                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
                                         <div>
-                                            <h3 className="text-lg font-medium text-slate-900 mb-6 flex items-center gap-2">Ratings <Info className="w-4 h-4 text-slate-400" /></h3>
-                                            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm flex items-center justify-between">
+                                            <h3 className="text-lg font-medium text-[var(--foreground)] mb-6 flex items-center gap-2">Ratings <Info className="w-4 h-4 text-[var(--muted)]" /></h3>
+                                            <div className="bg-[var(--card)] backdrop-blur-md rounded-[32px] border border-[var(--border)] p-6 shadow-sm flex items-center justify-between">
                                                 <div>
-                                                    <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Risk Score</div>
-                                                    <div className="text-3xl font-bold text-slate-900">A</div>
+                                                    <div className="text-xs font-bold text-[var(--muted)] uppercase tracking-widest mb-1">Risk Score</div>
+                                                    <div className="text-3xl font-bold text-[var(--foreground)]">A</div>
                                                 </div>
-                                                <div className="h-10 w-10 bg-slate-100 rounded-lg flex items-center justify-center">
-                                                    <ExternalLink className="w-5 h-5 text-slate-400" />
+                                                <div className="h-10 w-10 bg-[var(--surface-1)] rounded-lg flex items-center justify-center">
+                                                    <ExternalLink className="w-5 h-5 text-[var(--muted)]" />
                                                 </div>
                                             </div>
                                         </div>
 
                                         <div>
-                                            <h3 className="text-lg font-medium text-slate-900 mb-6">Risk Curation</h3>
+                                            <h3 className="text-lg font-medium text-[var(--foreground)] mb-6">Risk Curation</h3>
                                             <div className="space-y-4">
                                                 {[
                                                     { label: 'Allocator Address', type: 'Public Allocator', addr: '0xfd32...c75D' },
                                                     { label: 'Allocator Address', type: '', addr: '0x9E91...f9e1' },
                                                     { label: 'Allocator Address', type: '', addr: '0xfeed...3C9a' },
                                                 ].map((item, i) => (
-                                                    <div key={i} className="flex justify-between items-center py-2 border-b border-slate-100">
+                                                    <div key={i} className="flex justify-between items-center py-2 border-b border-[var(--borderSoft)]">
                                                         <div className="flex items-center gap-2">
-                                                            <span className="text-slate-500">{item.label}</span>
-                                                            {item.type && <Badge variant="secondary" className="text-[10px] h-5 bg-slate-100 text-slate-500">{item.type}</Badge>}
+                                                            <span className="text-[var(--muted)]">{item.label}</span>
+                                                            {item.type && <Badge variant="secondary" className="text-[10px] h-5 bg-[var(--surface-1)] text-[var(--muted)]">{item.type}</Badge>}
                                                         </div>
-                                                        <div className="flex items-center gap-2 text-slate-900 font-mono text-sm">
-                                                            {item.addr} <Copy className="w-3 h-3 text-slate-400" />
+                                                        <div className="flex items-center gap-2 text-[var(--foreground)] font-mono text-sm">
+                                                            {item.addr} <Copy className="w-3 h-3 text-[var(--muted)]" />
                                                         </div>
                                                     </div>
                                                 ))}
@@ -718,34 +752,34 @@ export default function VaultDetailsPage() {
 
                                     {/* User Distribution */}
                                     <div>
-                                        <h3 className="text-lg font-medium text-slate-900 mb-6">User Distribution</h3>
-                                        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+                                        <h3 className="text-lg font-medium text-[var(--foreground)] mb-6">User Distribution</h3>
+                                        <div className="bg-[var(--card)] backdrop-blur-md rounded-[32px] border border-[var(--border)] overflow-hidden shadow-sm">
                                             <table className="w-full text-sm">
-                                                <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-medium">
+                                                <thead className="bg-[var(--surface-1)] border-b border-[var(--borderSoft)] text-[var(--muted)] font-medium">
                                                     <tr>
                                                         <th className="px-6 py-4 text-left">User</th>
                                                         <th className="px-6 py-4 text-left">Deposit</th>
                                                         <th className="px-6 py-4 text-right">% of Deposits</th>
                                                     </tr>
                                                 </thead>
-                                                <tbody className="divide-y divide-slate-100">
+                                                <tbody className="divide-y divide-[var(--borderSoft)]">
                                                     {[
                                                         { user: '0x9390...A1D1', deposit: '193,264,429.49 USDC', val: '$193.24M', pct: '50.62%' },
                                                         { user: '0x334F...2A7b', deposit: '32,474,724.04 USDC', val: '$32.47M', pct: '8.50%' },
                                                         { user: '0x1870...a12e', deposit: '30,230,513.23 USDC', val: '$30.22M', pct: '7.91%' },
                                                         { user: '0xD1A1...c1BC', deposit: '9,744,946.2 USDC', val: '$9.74M', pct: '2.55%' },
                                                     ].map((row, i) => (
-                                                        <tr key={i} className="hover:bg-slate-50 transition-colors">
-                                                            <td className="px-6 py-4 font-mono text-slate-600 flex items-center gap-2">
+                                                        <tr key={i} className="hover:bg-[var(--surface-1)] transition-colors">
+                                                            <td className="px-6 py-4 font-mono text-[var(--secondary)] flex items-center gap-2">
                                                                 <div className={`w-5 h-5 rounded-full bg-gradient-to-tr from-blue-400 to-purple-500`}></div>
                                                                 {row.user}
                                                             </td>
                                                             <td className="px-6 py-4">
-                                                                <span className="font-medium text-slate-900">{row.deposit}</span>
-                                                                <Badge variant="secondary" className="ml-2 bg-slate-100 text-slate-500 font-normal">{row.val}</Badge>
+                                                                <span className="font-medium text-[var(--foreground)]">{row.deposit}</span>
+                                                                <Badge variant="secondary" className="ml-2 bg-[var(--surface-1)] text-[var(--muted)] font-normal">{row.val}</Badge>
                                                             </td>
-                                                            <td className="px-6 py-4 text-right flex items-center justify-end gap-2 text-slate-600">
-                                                                <div className="w-4 h-4 rounded-full border-2 border-slate-200 border-t-blue-500"></div>
+                                                            <td className="px-6 py-4 text-right flex items-center justify-end gap-2 text-[var(--secondary)]">
+                                                                <div className="w-4 h-4 rounded-full border-2 border-[var(--borderSoft)] border-t-[var(--primary)]"></div>
                                                                 {row.pct}
                                                             </td>
                                                         </tr>
@@ -758,17 +792,17 @@ export default function VaultDetailsPage() {
                                     {/* All Transactions */}
                                     <div>
                                         <div className="flex items-center justify-between mb-6">
-                                            <h3 className="text-lg font-medium text-slate-900">All transactions</h3>
+                                            <h3 className="text-lg font-medium text-[var(--foreground)]">All transactions</h3>
                                             <div className="flex gap-2">
-                                                <button className="flex items-center gap-1 text-sm font-medium text-slate-500 hover:text-slate-900">
+                                                <button className="flex items-center gap-1 text-sm font-medium text-[var(--muted)] hover:text-[var(--foreground)]">
                                                     <ChevronRight className="w-4 h-4 rotate-90" /> All
                                                 </button>
-                                                <Badge variant="secondary" className="bg-slate-100 hover:bg-slate-200 cursor-pointer">Customize</Badge>
+                                                <Badge variant="secondary" className="bg-[var(--surface-1)] hover:bg-[var(--surface-2)] cursor-pointer text-[var(--muted)]">Customize</Badge>
                                             </div>
                                         </div>
-                                        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+                                        <div className="bg-[var(--card)] backdrop-blur-md rounded-[32px] border border-[var(--border)] overflow-hidden shadow-sm">
                                             <table className="w-full text-sm">
-                                                <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-medium">
+                                                <thead className="bg-[var(--surface-1)] border-b border-[var(--borderSoft)] text-[var(--muted)] font-medium">
                                                     <tr>
                                                         <th className="px-6 py-4 text-left">Date</th>
                                                         <th className="px-6 py-4 text-left">Type</th>
@@ -777,29 +811,29 @@ export default function VaultDetailsPage() {
                                                         <th className="px-6 py-4 text-right">Transaction</th>
                                                     </tr>
                                                 </thead>
-                                                <tbody className="divide-y divide-slate-100">
+                                                <tbody className="divide-y divide-[var(--borderSoft)]">
                                                     {[
                                                         { date: '2026-01-02 18:17:23', type: 'Vault Deposit', amount: '6,257.11 USDC', val: '$6256.63', user: '0x251c...3A75' },
                                                         { date: '2026-01-02 18:10:59', type: 'Vault Deposit', amount: '2,350 USDC', val: '$2349.81', user: '0x334F...2A7b' },
                                                         { date: '2026-01-02 17:45:47', type: 'Vault Withdraw', amount: '1.05 USDC', val: '$1.05', user: '0x3ecB...E614' },
                                                     ].map((row, i) => (
-                                                        <tr key={i} className="hover:bg-slate-50 transition-colors">
-                                                            <td className="px-6 py-4 text-slate-500 whitespace-nowrap">{row.date}</td>
-                                                            <td className="px-6 py-4 font-medium text-slate-900 whitespace-nowrap">{row.type}</td>
+                                                        <tr key={i} className="hover:bg-[var(--surface-1)] transition-colors">
+                                                            <td className="px-6 py-4 text-[var(--muted)] whitespace-nowrap">{row.date}</td>
+                                                            <td className="px-6 py-4 font-medium text-[var(--foreground)] whitespace-nowrap">{row.type}</td>
                                                             <td className="px-6 py-4 whitespace-nowrap">
                                                                 <div className="flex items-center gap-2">
-                                                                    <div className="w-4 h-4 rounded-full bg-blue-500 flex-shrink-0"></div>
-                                                                    <span className="font-medium text-slate-900 whitespace-nowrap">{row.amount}</span>
-                                                                    <Badge variant="secondary" className="bg-slate-100 text-slate-400 text-[10px] whitespace-nowrap">{row.val}</Badge>
+                                                                    <div className="w-4 h-4 rounded-full bg-[#4A6D4D] flex-shrink-0"></div>
+                                                                    <span className="font-medium text-[var(--foreground)] whitespace-nowrap">{row.amount}</span>
+                                                                    <Badge variant="secondary" className="bg-[var(--surface-1)] text-[var(--muted)] text-[10px] whitespace-nowrap">{row.val}</Badge>
                                                                 </div>
                                                             </td>
-                                                            <td className="px-6 py-4 font-mono text-slate-600 whitespace-nowrap">
+                                                            <td className="px-6 py-4 font-mono text-[var(--secondary)] whitespace-nowrap">
                                                                 <div className="flex items-center gap-2">
-                                                                    <div className="w-4 h-4 rounded-full bg-slate-300 flex-shrink-0"></div>
+                                                                    <div className="w-4 h-4 rounded-full bg-[var(--borderSoft)] flex-shrink-0"></div>
                                                                     <span>{row.user}</span>
                                                                 </div>
                                                             </td>
-                                                            <td className="px-6 py-4 text-right font-mono text-blue-600 whitespace-nowrap">0x8e7...</td>
+                                                            <td className="px-6 py-4 text-right font-mono text-[var(--primary)] whitespace-nowrap">0x8e7...</td>
                                                         </tr>
                                                     ))}
                                                 </tbody>
@@ -824,7 +858,7 @@ export default function VaultDetailsPage() {
                     </div>
 
                     {/* RIGHT COLUMN: Interaction Sidebar */}
-                    <div className="lg:col-span-1 space-y-6 sticky top-28 h-fit">
+                    <div className="lg:col-span-1 space-y-6 lg:sticky lg:top-28 h-fit">
 
                         {/* Deposit / Withdraw Card */}
                         {/* Deposit / Withdraw Card */}

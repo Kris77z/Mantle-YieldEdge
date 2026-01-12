@@ -812,7 +812,7 @@ export default function VaultDetailsPage({ params }: { params: { id: string } })
                     <div className="lg:col-span-1 space-y-6">
 
                         {/* Deposit / Withdraw Card */}
-                        <div className="bg-[var(--card)] backdrop-blur-md rounded-[32px] border border-[var(--border)] p-8 shadow-sm sticky top-24">
+                        <div className="bg-[var(--card)] backdrop-blur-md rounded-[32px] border border-[var(--border)] p-8 shadow-sm lg:sticky lg:top-24">
                             {isRealVault ? (
                                 <>
                                     {/* Tabs */}
