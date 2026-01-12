@@ -24,7 +24,7 @@ export const CONTRACTS = {
         strategies: {
             btcBull: {
                 name: 'BTC Bull Run Enhanced',
-                address: '0xBaFeB777b7a100F3f4ea407b70344715b6059dFB', // Deployed Step 2730
+                address: '0xE9b323ca86edC56fB7608fcc0183c9491190696A', // Deployed Step 4065 - Fix Repeated Deposits
                 description: 'Principal protected by USDY, Yield bets on BTC > $100k',
                 apy: '15% ~ 500%',
                 risk: 'Low'
