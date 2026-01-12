@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { ConnectButton } from '@rainbow-me/rainbowkit';
+import { CustomConnectButton } from '@/components/CustomConnectButton';
 import { ChevronRight, ShieldCheck, Copy, ExternalLink, Info, Sparkles, Wallet, TrendingUp } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
@@ -250,7 +250,7 @@ export default function VaultDetailsPage() {
                             </span>
                         </div>
                     </Link>
-                    <ConnectButton showBalance={false} chainStatus="icon" accountStatus="address" />
+                    <CustomConnectButton />
                 </div>
             </header>
 
