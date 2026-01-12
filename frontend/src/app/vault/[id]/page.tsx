@@ -10,7 +10,7 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart,
 import { TOKEN_ICONS } from '@/config/contracts';
 import { ExposureDisplay, ExposureAsset } from '@/components/vault/ExposureDisplay';
 import { useAsset } from '@/context/AssetContext';
-import { useTokenBalance, useDepositInfo, useApproveToken, useDeposit, useFlashDeposit, useWithdraw, useTokenAllowance, useMintToken, useAvailableYield } from '@/hooks/useYieldEdge';
+import { useTokenBalance, useDepositInfo, useApproveToken, useDeposit, useFlashDeposit, useWithdraw, useTokenAllowance, useMintToken, useAvailableYield, useStrategyLockInfo } from '@/hooks/useYieldEdge';
 import { useAccount } from 'wagmi';
 import { formatEther } from 'viem';
 import { toast } from 'sonner';
@@ -35,11 +35,12 @@ export default function VaultDetailsPage({ params }: { params: { id: string } })
     const [activeSection, setActiveSection] = useState<Tab>('performance');
 
     const { currentAsset, assetConfig, setAsset } = useAsset();
-    const { isConnected } = useAccount();
+    const { isConnected, address } = useAccount();
     const { data: balance, refetch: refetchBalance } = useTokenBalance();
     const { data: depositInfo, refetch: refetchDeposit } = useDepositInfo();
     const { data: allowance, refetch: refetchAllowance } = useTokenAllowance();
     const { data: availableYield } = useAvailableYield();
+    const { data: lockInfo } = useStrategyLockInfo(address as string);
 
     // Deposit/withdraw hooks
     const { approve, isPending: isApproving, isConfirming: isApprovingConfirm, isSuccess: approveSuccess } = useApproveToken();
@@ -149,8 +150,9 @@ export default function VaultDetailsPage({ params }: { params: { id: string } })
         if (!amount || parseFloat(amount) <= 0) return;
 
         if (needsApproval) {
-            const amountWei = BigInt(Math.floor(parseFloat(amount) * 1e18));
-            approve(amountWei);
+            // Use MaxUint256 for infinite approval
+            const maxUint256 = 115792089237316195423570985008687907853269984665640564039457584007913129639935n;
+            approve(maxUint256);
         } else {
             if (isFlashMode) {
                 flashDeposit(amount, lockDuration);
@@ -219,20 +221,25 @@ export default function VaultDetailsPage({ params }: { params: { id: string } })
                             </div>
 
                             {/* Yield Stats Card */}
-                            <div className="bg-[#302A30] rounded-[24px] p-6 mb-6 text-[#E1D9CB] grid grid-cols-2 gap-8 shadow-xl relative overflow-hidden">
-                                <div className="absolute top-0 right-0 w-64 h-64 bg-[var(--primary)] opacity-10 blur-[80px] rounded-full translate-x-1/2 -translate-y-1/2"></div>
-                                <div className="relative z-10">
-                                    <div className="text-[10px] uppercase tracking-widest text-[var(--muted)] mb-2">Available y{symbol}</div>
-                                    <div className="text-4xl font-serif font-bold flex items-center gap-2 text-[#C8A166]">
-                                        <Sparkles className="w-5 h-5" />
-                                        {availableYield ? parseFloat(availableYield).toFixed(4) : '0.0000'}
-                                    </div>
-                                    <div className="text-[10px] text-[var(--muted)] mt-1 font-medium bg-[rgba(255,255,255,0.05)] inline-block px-2 py-0.5 rounded-full">Betting Power</div>
+                            {/* Yield Stats Card */}
+                            <div className="bg-[var(--card)] backdrop-blur-md rounded-[32px] border border-[var(--border)] p-8 mb-8 relative overflow-hidden group shadow-sm">
+                                <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none transition-transform duration-700 group-hover:scale-110 group-hover:rotate-3">
+                                    <Sparkles className="w-32 h-32 text-[var(--primary)]" />
                                 </div>
-                                <div className="text-right relative z-10">
-                                    <div className="text-[10px] uppercase tracking-widest text-[var(--muted)] mb-2">Boosted APY</div>
-                                    <div className="text-4xl font-serif font-bold text-[#4A6D4D]">50.00%</div>
-                                    <div className="text-[10px] text-[var(--muted)] mt-1 font-medium bg-[rgba(255,255,255,0.05)] inline-block px-2 py-0.5 rounded-full">Instant Yield Active</div>
+                                <div className="grid grid-cols-2 gap-8 relative z-10">
+                                    <div>
+                                        <div className="text-xs uppercase tracking-widest text-[var(--muted)] mb-2 font-semibold">Available y{symbol}</div>
+                                        <div className="text-4xl md:text-5xl font-serif font-medium flex items-center gap-3 text-[var(--primary)]">
+                                            <Sparkles className="w-6 h-6" />
+                                            {availableYield ? parseFloat(availableYield).toFixed(4) : '0.0000'}
+                                        </div>
+                                        <div className="text-xs text-[var(--muted)] mt-2 font-medium tracking-wide">Betting Power</div>
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="text-xs uppercase tracking-widest text-[var(--muted)] mb-2 font-semibold">Boosted APY</div>
+                                        <div className="text-4xl md:text-5xl font-serif font-medium text-[#4A6D4D]">50.00%</div>
+                                        <div className="text-xs text-[var(--muted)] mt-2 font-medium tracking-wide">Instant Yield Active</div>
+                                    </div>
                                 </div>
                             </div>
 
@@ -809,19 +816,19 @@ export default function VaultDetailsPage({ params }: { params: { id: string } })
                     </div>
 
                     {/* RIGHT COLUMN: Interaction Sidebar */}
-                    <div className="lg:col-span-1 space-y-6">
+                    <div className="lg:col-span-1 space-y-6 lg:sticky lg:top-24 h-fit">
 
                         {/* Deposit / Withdraw Card */}
-                        <div className="bg-[var(--card)] backdrop-blur-md rounded-[32px] border border-[var(--border)] p-8 shadow-sm lg:sticky lg:top-24">
+                        <div className="bg-[var(--card)] backdrop-blur-md rounded-[32px] border border-[var(--border)] p-8 shadow-sm">
                             {isRealVault ? (
                                 <>
                                     {/* Tabs */}
-                                    <div className="flex bg-[var(--surface-1)] p-1 rounded-full mb-8 border border-[var(--borderSoft)]">
+                                    <div className="flex bg-[var(--surface-1)] p-1.5 rounded-2xl mb-8 border border-[var(--borderSoft)]">
                                         <button
                                             onClick={() => setActiveTab('deposit')}
                                             className={cn(
-                                                "flex-1 py-3 text-xs font-bold uppercase tracking-widest rounded-full transition-all",
-                                                activeTab === 'deposit' ? "bg-[var(--primary)] text-white shadow-md transform scale-105" : "text-[var(--muted)] hover:text-[var(--foreground)]"
+                                                "flex-1 py-3 text-xs font-bold uppercase tracking-widest rounded-xl transition-all",
+                                                activeTab === 'deposit' ? "bg-[var(--background)] text-[var(--primary)] shadow-sm border border-[var(--borderSoft)]" : "text-[var(--muted)] hover:text-[var(--secondary)]"
                                             )}
                                         >
                                             Deposit
@@ -829,8 +836,8 @@ export default function VaultDetailsPage({ params }: { params: { id: string } })
                                         <button
                                             onClick={() => setActiveTab('withdraw')}
                                             className={cn(
-                                                "flex-1 py-3 text-xs font-bold uppercase tracking-widest rounded-full transition-all",
-                                                activeTab === 'withdraw' ? "bg-[var(--primary)] text-white shadow-md transform scale-105" : "text-[var(--muted)] hover:text-[var(--foreground)]"
+                                                "flex-1 py-3 text-xs font-bold uppercase tracking-widest rounded-xl transition-all",
+                                                activeTab === 'withdraw' ? "bg-[var(--background)] text-[var(--primary)] shadow-sm border border-[var(--borderSoft)]" : "text-[var(--muted)] hover:text-[var(--secondary)]"
                                             )}
                                         >
                                             Withdraw
@@ -838,18 +845,26 @@ export default function VaultDetailsPage({ params }: { params: { id: string } })
                                     </div>
 
                                     {/* Input Area */}
-                                    <div className="space-y-4 mb-8">
-                                        <div className="bg-white/40 rounded-2xl p-6 border border-[var(--borderSoft)] focus-within:border-[var(--primary)] focus-within:ring-1 focus-within:ring-[var(--primary)] transition-all">
-                                            <div className="flex justify-between text-[10px] text-[var(--muted)] uppercase tracking-wider mb-2 font-bold">
+                                    <div className="space-y-6 mb-8">
+                                        <div className="bg-[var(--surface-1)] rounded-[24px] p-6 border border-[var(--borderSoft)] focus-within:border-[var(--primary)] focus-within:ring-1 focus-within:ring-[var(--primary)]/20 transition-all shadow-inner">
+                                            <div className="flex justify-between text-[10px] uppercase tracking-widest text-[var(--muted)] mb-3 font-bold">
                                                 <span>{activeTab === 'deposit' ? 'Amount' : 'Position'}</span>
-                                                <span>
-                                                    {activeTab === 'deposit'
-                                                        ? `Balance: ${displayBalance} ${symbol}`
-                                                        : `Holdings: ${displayPosition} p${symbol}`
-                                                    }
-                                                </span>
+                                                <div className="flex flex-col items-end">
+                                                    <span>
+                                                        {activeTab === 'deposit'
+                                                            ? `Balance: ${displayBalance} ${symbol}`
+                                                            : `Holdings: ${displayPosition} p${symbol}`
+                                                        }
+                                                    </span>
+                                                    {activeTab === 'withdraw' && lockInfo?.isLocked && (
+                                                        <span className="text-[var(--gold)] text-[9px] flex items-center gap-1 mt-0.5">
+                                                            <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                                                            Locked until {lockInfo.unlockTime.toLocaleDateString()}
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </div>
-                                            <div className="flex items-center gap-3">
+                                            <div className="flex items-center gap-4">
                                                 <input
                                                     type="text"
                                                     value={amount}
@@ -857,9 +872,9 @@ export default function VaultDetailsPage({ params }: { params: { id: string } })
                                                     placeholder="0"
                                                     className="bg-transparent text-4xl font-serif font-medium text-[var(--foreground)] flex-1 min-w-0 focus:outline-none placeholder:text-[var(--muted)]/30"
                                                 />
-                                                <div className="flex items-center gap-2 bg-[var(--surface-1)] px-3 py-1.5 rounded-full border border-[var(--borderSoft)] shadow-sm flex-shrink-0">
-                                                    <div className="w-5 h-5 rounded-full bg-[var(--primary)] flex-shrink-0"></div>
-                                                    <span className="text-xs font-bold text-[var(--foreground)] whitespace-nowrap uppercase tracking-wider">
+                                                <div className="flex items-center gap-2 bg-[var(--background)] px-4 py-2 rounded-full border border-[var(--borderSoft)] shadow-sm flex-shrink-0">
+                                                    {assetConfig.icon ? <img src={assetConfig.icon} alt={symbol} className="w-5 h-5 rounded-full" /> : <div className="w-5 h-5 rounded-full bg-[var(--primary)]" />}
+                                                    <span className="text-sm font-bold text-[var(--foreground)] whitespace-nowrap">
                                                         {activeTab === 'deposit' ? symbol : `p${symbol}`}
                                                     </span>
                                                 </div>
@@ -869,21 +884,20 @@ export default function VaultDetailsPage({ params }: { params: { id: string } })
 
                                     {/* ⚡️ Flash Yield Option */}
                                     {activeTab === 'deposit' && (
-                                        <div className="mb-8 p-6 rounded-[24px] border border-[var(--gold)]/30 bg-[var(--gold)]/5 relative overflow-hidden group">
-                                            <div className="absolute top-0 right-0 w-32 h-32 bg-[var(--gold)]/10 blur-[40px] rounded-full -translate-y-1/2 translate-x-1/2 group-hover:bg-[var(--gold)]/20 transition-all"></div>
-                                            <div className="flex items-center justify-between mb-4 relative z-10">
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-sm font-serif font-bold text-[var(--foreground)] flex items-center gap-1">
-                                                        <span className="text-lg">⚡️</span> Instant Power
+                                        <div className="mb-8 relative z-10 transition-all duration-500 ease-in-out">
+                                            <div className="flex items-center justify-between mb-5">
+                                                <div className="flex items-center gap-3">
+                                                    <span className="text-sm font-bold text-[var(--foreground)] flex items-center gap-2 uppercase tracking-wide">
+                                                        <Sparkles className="w-4 h-4 text-[var(--primary)]" /> Flash Yield
                                                     </span>
-                                                    <Badge className="bg-[var(--gold)] text-white border-none text-[10px] px-2 py-0.5 shadow-sm">NEW</Badge>
+                                                    <Badge className="bg-[#B88746] text-white border-none text-[10px] px-2 py-0.5 shadow-sm font-bold tracking-wider">NEW</Badge>
                                                 </div>
                                                 <div onClick={() => setIsFlashMode(!isFlashMode)} className={cn(
-                                                    "w-12 h-7 rounded-full relative cursor-pointer transition-colors duration-300 ease-in-out border border-[var(--borderSoft)]",
-                                                    isFlashMode ? "bg-[var(--primary)] border-[var(--primary)]" : "bg-[var(--surface-2)]"
+                                                    "w-12 h-7 rounded-full relative cursor-pointer transition-colors duration-300 ease-in-out border border-transparent hover:border-[var(--primary)]/30",
+                                                    isFlashMode ? "bg-[var(--primary)]" : "bg-[var(--surface-2)]"
                                                 )}>
                                                     <div className={cn(
-                                                        "absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform duration-300 shadow-sm",
+                                                        "absolute top-1 left-1 w-5 h-5 rounded-full bg-white transition-transform duration-300 shadow-md",
                                                         isFlashMode ? "translate-x-5" : "translate-x-0"
                                                     )} />
                                                 </div>
@@ -924,21 +938,21 @@ export default function VaultDetailsPage({ params }: { params: { id: string } })
                                     )}
 
                                     {/* Projection */}
-                                    <div className="space-y-3 mb-8">
-                                        <div className="flex justify-between text-sm items-center">
-                                            <span className="text-[var(--secondary)]">Projected Monthly Earnings</span>
-                                            <span className="font-serif font-medium text-[var(--foreground)] text-base">$0.00</span>
+                                    <div className="space-y-3 mb-8 px-2">
+                                        <div className="flex justify-between text-xs font-medium tracking-wide">
+                                            <span className="text-[var(--muted)]">Projected Monthly Earnings</span>
+                                            <span className="font-serif text-[var(--foreground)]">$0.00</span>
                                         </div>
-                                        <div className="flex justify-between text-sm items-center">
+                                        <div className="flex justify-between text-xs font-medium tracking-wide">
                                             <span className="text-[var(--secondary)]">Projected Yearly Earnings</span>
-                                            <span className="font-serif font-medium text-[var(--foreground)] text-base">$0.00</span>
+                                            <span className="font-serif text-[var(--foreground)]">$0.00</span>
                                         </div>
                                     </div>
 
                                     {/* Action Button */}
                                     <button
                                         onClick={handleAction}
-                                        disabled={isPending || !amount || parseFloat(amount) <= 0}
+                                        disabled={isPending || !amount || parseFloat(amount) <= 0 || (activeTab === 'withdraw' && lockInfo?.isLocked)}
                                         className="w-full py-4 rounded-[16px] bg-[var(--primary)] hover:bg-[var(--primary)]/90 disabled:bg-[var(--muted)]/20 disabled:text-[var(--muted)] disabled:cursor-not-allowed text-[var(--primary-foreground)] font-bold text-lg transition-all shadow-[0_4px_20px_-4px_var(--primary-custom)_30] active:scale-[0.98] uppercase tracking-widest"
                                     >
                                         {(isApproving || isDepositing || isWithdrawing) ? (
@@ -960,29 +974,28 @@ export default function VaultDetailsPage({ params }: { params: { id: string } })
                                         ) : activeTab === 'deposit' ? (
                                             needsApproval ? `Approve ${symbol}` : (isFlashMode ? `Lock & Flash Deposit` : `Supply ${symbol}`)
                                         ) : (
-                                            `Withdraw ${symbol}`
+                                            lockInfo?.isLocked ? `Locked until ${lockInfo.unlockTime.toLocaleDateString()}` : `Withdraw ${symbol}`
                                         )}
                                     </button>
 
-                                    <p className="text-xs text-center text-[var(--muted)] mt-6 leading-relaxed">
-                                        By using this vault, you agree to the <span className="underline cursor-pointer hover:text-[var(--foreground)] transition-colors">Terms of Service</span> and understand the risks involved.
+                                    <p className="text-[10px] text-center text-[var(--muted)] mt-6 leading-relaxed uppercase tracking-wide opacity-70">
+                                        By using this vault, you agree to the <span className="underline cursor-pointer hover:text-[var(--primary)] text-[var(--primary)]">Terms of Service</span> and understand the risks involved.
                                     </p>
                                 </>
                             ) : (
                                 /* Mock Vault - Coming Soon State */
-                                <div className="py-8 text-center space-y-6">
-                                    <div className="flex flex-col items-center justify-center gap-2">
-                                        <div className="text-sm font-medium text-[var(--secondary)] flex items-center gap-2 uppercase tracking-wider">
-                                            <Sparkles className="w-4 h-4 text-[var(--gold)]" /> Available y{symbol}
+                                <div className="py-8 text-center bg-[var(--surface-1)] rounded-2xl border border-[var(--borderSoft)]">
+                                    <div className="text-right">
+                                        <div className="text-sm font-medium text-[var(--muted)] mb-1 flex items-center justify-end gap-1 uppercase tracking-wide">
+                                            <Sparkles className="w-3.5 h-3.5 text-[var(--primary)]" /> Available y{symbol}
                                         </div>
-                                        <div className="text-4xl font-serif font-medium text-[var(--foreground)]">
+                                        <div className="text-3xl font-serif font-bold text-[var(--foreground)] tracking-tight">
                                             ${Number(availableYield).toFixed(4)}
                                         </div>
-                                        <div className="text-xs text-[var(--muted)] font-medium">
+                                        <div className="text-xs text-[var(--secondary)] mt-1 font-medium italic">
                                             Risk-free betting power
                                         </div>
-                                    </div>
-                                    <Link href="/" className="inline-flex items-center gap-2 px-6 py-3 bg-[var(--primary)] hover:bg-[var(--primary)]/90 text-[var(--primary-foreground)] font-bold text-sm uppercase tracking-widest rounded-full transition-colors">
+                                    </div>        <Link href="/" className="inline-flex items-center gap-2 px-6 py-3 mt-6 bg-[var(--primary)] hover:bg-[var(--primary)]/90 text-[var(--primary-foreground)] font-bold uppercase tracking-widest rounded-[14px] transition-all shadow-lg text-xs">
                                         View Active Vaults
                                     </Link>
                                 </div>
@@ -990,12 +1003,12 @@ export default function VaultDetailsPage({ params }: { params: { id: string } })
                         </div>
 
                         {/* Additional Info Card */}
-                        <div className="bg-[var(--primary)]/5 rounded-[24px] border border-[var(--primary)]/10 p-6 backdrop-blur-sm">
+                        <div className="bg-[var(--surface-1)] rounded-[24px] border border-[var(--borderSoft)] p-6 backdrop-blur-sm shadow-sm">
                             <div className="flex items-start gap-4">
                                 <Info className="w-5 h-5 text-[var(--primary)] mt-0.5" />
                                 <div>
-                                    <h4 className="font-bold text-[var(--foreground)] text-sm mb-2">About Steakhouse USDC</h4>
-                                    <p className="text-xs text-[var(--secondary)] leading-relaxed">
+                                    <h4 className="font-bold text-[var(--foreground)] text-sm uppercase tracking-wider mb-2">About Steakhouse USDC</h4>
+                                    <p className="text-xs text-[var(--secondary)] leading-relaxed font-medium">
                                         This vault optimizes yield by allocating USDC to whitelisted lending markets on Morpho. It is curated by Steakhouse Financial, focusing on high-quality collateral.
                                     </p>
                                 </div>

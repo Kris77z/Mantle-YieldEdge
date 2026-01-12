@@ -242,6 +242,35 @@ export function useWithdraw() {
     return { withdraw, isPending, isConfirming, isSuccess, error, hash };
 }
 
+/**
+ * Get lock info for a specific strategy/user from YieldVault
+ */
+export function useStrategyLockInfo(strategyAddress: string) {
+    const contracts = useCurrentAssetContracts();
+
+    const result = useReadContract({
+        address: contracts.vault as `0x${string}`,
+        abi: YIELD_VAULT_ABI,
+        functionName: 'deposits',
+        args: [strategyAddress as `0x${string}`],
+        query: {
+            enabled: !!strategyAddress,
+        },
+    });
+
+    const data = result.data ? {
+        shares: result.data[0],
+        principalValue: result.data[1],
+        depositTime: new Date(Number(result.data[2]) * 1000),
+        lockedYield: result.data[3],
+        flashFloor: result.data[4],
+        unlockTime: new Date(Number(result.data[5]) * 1000),
+        isLocked: Number(result.data[5]) * 1000 > Date.now()
+    } : null;
+
+    return { ...result, data };
+}
+
 // ============ PredictionMarket Hooks ============
 
 /**

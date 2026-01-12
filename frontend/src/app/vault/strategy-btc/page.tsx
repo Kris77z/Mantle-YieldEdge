@@ -10,7 +10,7 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart,
 import { TOKEN_ICONS, getContracts, MOCK_USDY_ABI, STRATEGY_VAULT_ABI } from '@/config/contracts';
 import { ExposureDisplay, ExposureAsset } from '@/components/vault/ExposureDisplay';
 import { useAsset } from '@/context/AssetContext';
-import { useTokenBalance } from '@/hooks/useYieldEdge';
+import { useTokenBalance, useStrategyLockInfo } from '@/hooks/useYieldEdge';
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt, useSimulateContract } from 'wagmi';
 import { formatEther, parseEther } from 'viem';
 import { toast } from 'sonner';
@@ -43,6 +43,8 @@ export default function VaultDetailsPage() {
     const strategyConfig = contracts.strategies?.btcBull;
     const strategyAddress = strategyConfig?.address;
     const usdyAddress = contracts.tokens.usdy.address;
+    const { data: lockInfo } = useStrategyLockInfo(strategyAddress as string);
+
 
     // Hardcode USDY asset context
     React.useEffect(() => {
@@ -895,12 +897,20 @@ export default function VaultDetailsPage() {
                                         <div className="bg-[var(--surface-1)] rounded-[24px] p-6 border border-[var(--borderSoft)] focus-within:border-[var(--primary)] focus-within:ring-1 focus-within:ring-[var(--primary)]/20 transition-all shadow-inner">
                                             <div className="flex justify-between text-[10px] uppercase tracking-widest text-[var(--muted)] mb-3 font-bold">
                                                 <span>{activeTab === 'deposit' ? 'Amount' : 'Position'}</span>
-                                                <span>
-                                                    {activeTab === 'deposit'
-                                                        ? `Balance: ${displayBalance} ${symbol}`
-                                                        : `Holdings: ${displayPosition} p${symbol}`
-                                                    }
-                                                </span>
+                                                <div className="flex flex-col items-end">
+                                                    <span>
+                                                        {activeTab === 'deposit'
+                                                            ? `Balance: ${displayBalance} ${symbol}`
+                                                            : `Holdings: ${displayPosition} p${symbol}`
+                                                        }
+                                                    </span>
+                                                    {activeTab === 'withdraw' && lockInfo?.isLocked && (
+                                                        <span className="text-[var(--gold)] text-[9px] flex items-center gap-1 mt-0.5">
+                                                            <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                                                            Locked until {lockInfo.unlockTime.toLocaleDateString()}
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </div>
                                             <div className="flex items-center gap-4">
                                                 <input
@@ -990,7 +1000,7 @@ export default function VaultDetailsPage() {
                                     {/* Action Button */}
                                     <button
                                         onClick={handleAction}
-                                        disabled={isPending || !amount || parseFloat(amount) <= 0}
+                                        disabled={isPending || !amount || parseFloat(amount) <= 0 || (activeTab === 'withdraw' && lockInfo?.isLocked)}
                                         className="w-full py-4 rounded-[16px] bg-[var(--primary)] hover:bg-[var(--primary)]/90 disabled:bg-[var(--muted)]/20 disabled:text-[var(--muted)] disabled:cursor-not-allowed text-[var(--primary-foreground)] font-bold text-lg transition-all shadow-[0_4px_20px_-4px_var(--primary-custom)_30] active:scale-[0.98] uppercase tracking-widest"
                                     >
                                         {(isApproving || isDepositing || isWithdrawing) ? (
@@ -1012,7 +1022,7 @@ export default function VaultDetailsPage() {
                                         ) : activeTab === 'deposit' ? (
                                             needsApproval ? `Approve ${symbol}` : (isFlashMode ? `Lock & Flash Deposit` : `Supply ${symbol}`)
                                         ) : (
-                                            `Withdraw ${symbol}`
+                                            lockInfo?.isLocked ? `Locked until ${lockInfo.unlockTime.toLocaleDateString()}` : `Withdraw ${symbol}`
                                         )}
                                     </button>
 

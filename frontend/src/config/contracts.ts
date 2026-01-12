@@ -207,6 +207,20 @@ export const YIELD_VAULT_ABI = [
         inputs: [{ name: 'user', type: 'address' }],
         outputs: [{ name: '', type: 'uint256' }],
     },
+    {
+        name: 'deposits',
+        type: 'function',
+        stateMutability: 'view',
+        inputs: [{ name: 'user', type: 'address' }],
+        outputs: [
+            { name: 'shares', type: 'uint256' },
+            { name: 'principalValue', type: 'uint256' },
+            { name: 'depositTime', type: 'uint256' },
+            { name: 'lockedYield', type: 'uint256' },
+            { name: 'flashFloor', type: 'uint256' },
+            { name: 'unlockTime', type: 'uint256' },
+        ],
+    },
 ] as const;
 
 export const PREDICTION_MARKET_ABI = [
